@@ -1,0 +1,18 @@
+[Unit]
+Description=KD Pager hub (KD chat -> FCM relay)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=kdpager
+Group=kdpager
+ExecStart=/usr/local/bin/kd-pager-hub
+EnvironmentFile=/etc/kd-pager/hub.env
+StateDirectory=kd-pager
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+# Sandbox it to your own standard before exposing it to the internet.
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+# Caddy obtains the cert over :80 (ACME HTTP-01) and serves :443. Firewall: 80 + 443 only.
+pager.jux-lab.com {
+	request_body {
+		max_size 32KB
+	}
+	reverse_proxy 127.0.0.1:9440
+}

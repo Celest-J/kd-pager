@@ -1,0 +1,21 @@
+# build output
+android/build/
+android/app/build/
+android/.gradle/
+android/.kotlin/
+android/local.properties
+hub/target/
+*.apk
+*.aab
+
+# secrets / per-deployer config — never commit
+android/keystore.properties
+*.jks
+*.keystore
+android/app/google-services.json
+hub/.env
+*.env
+!hub/deploy/hub.env.example
+
+# Old Vibe ships in the release APK only
+android/app/src/main/res/raw/raid_old_vibe.ogg

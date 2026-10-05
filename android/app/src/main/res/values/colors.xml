@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- KD's own palette, read from krackeddevs.com computed styles 2026-10-06 -->
+    <color name="kd_black">#131413</color>
+    <color name="kd_card">#171D18</color>
+    <color name="kd_border">#3322C55E</color>
+    <color name="kd_green">#22C55E</color>
+    <color name="kd_green_btn">#5EEB8A</color>
+    <color name="kd_grey">#868D81</color>
+    <color name="kd_white">#FFFFFF</color>
+</resources>
