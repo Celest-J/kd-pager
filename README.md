@@ -1,5 +1,7 @@
 # KD Pager
 
+<p align="center"><img src="docs/banner.jpg" alt="KD Pager — raids on your lock screen"></p>
+
 **An Android app for [Kracked Devs](https://krackeddevs.com) with real push notifications built in** — guild chat pings with the sender's face, and raid alerts with the boss on your lock screen.
 
 > Unofficial community project. Not made by or affiliated with Kracked Devs. The app shows KD's own website; login happens on KD's own page.
