@@ -44,6 +44,8 @@ object Kd {
         var raw = parts.joinToString("") { it.second }
         raw = java.net.URLDecoder.decode(raw, "UTF-8")
         if (raw.startsWith("base64-")) raw = String(b64decode(raw.removePrefix("base64-")))
+        // a sign-out (on this phone or anywhere: KD's logout is global) can leave the cookie present but empty
+        if (raw.isBlank()) return null
         return parse(JSONObject(raw))
     }
 

@@ -6,6 +6,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import android.os.Bundle
 import android.view.WindowInsets
 import android.webkit.CookieManager
@@ -79,13 +80,13 @@ class MainActivity : Activity() {
             override fun onPageFinished(view: WebView, url: String) {
                 CookieManager.getInstance().flush()
                 putPager(view, url)
-                if (Kd.sessionFromCookie() != null) loggedIn()
+                if (cookieSession() != null) loggedIn()
             }
         }
         if (Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { goBack() }
         }
-        web.loadUrl(intent.getStringExtra(EXTRA_URL) ?: if (Kd.sessionFromCookie() != null) HOME else LOGIN)
+        web.loadUrl(intent.getStringExtra(EXTRA_URL) ?: if (cookieSession() != null) HOME else LOGIN)
         intent.getStringExtra(EXTRA_GUILD)?.let { PagerService.clear(it) }
     }
 
@@ -106,6 +107,11 @@ class MainActivity : Activity() {
     private fun putPager(view: WebView, url: String?) {
         if (url != null && android.net.Uri.parse(url).host == "krackeddevs.com") view.evaluateJavascript(navJs, null)
     }
+
+    // Unreadable cookie = not logged in: show the login page instead of crashing on every launch.
+    private fun cookieSession(): Kd.Session? = runCatching { Kd.sessionFromCookie() }
+        .onFailure { Log.w("KdPager", "unreadable KD session cookie, treating as logged out: ${it.message}") }
+        .getOrNull()
 
     @Deprecated("pre-33 back handling")
     override fun onBackPressed() = goBack()
