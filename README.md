@@ -22,7 +22,7 @@
 
 ## Getting started
 
-1. Install the APK from [Releases](../../releases) (Android 8+; own sound files need Android 10+).
+1. Install the APK from [Releases](../../releases/latest) — what changed in each version: [CHANGELOG](CHANGELOG.md) (Android 8+; own sound files need Android 10+).
 2. Log in to KD — use **GitHub, Discord or email**. Google blocks its login inside apps.
 3. Tap the **pager button** next to `<KD/>` → **Connect Pager** → log in once more → allow notifications.
 4. Settings shows **Connected · watching N guilds**. Done.
