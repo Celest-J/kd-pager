@@ -15,7 +15,12 @@ use tokio::sync::{watch, Semaphore};
 pub const MAX_REGS: usize = 1000;
 /// One KD account can keep at most this many phones; a new Connect past it drops the oldest.
 pub const MAX_PER_USER: usize = 3;
-const REFRESH_LEAD_SECS: i64 = 300;
+// 20 min: the phone's copy (served by /token) always has well over KD's own ~90 s refresh margin left,
+// so neither KD's page nor KD's server ever tries to refresh it themselves.
+const REFRESH_LEAD_SECS: i64 = 1200;
+/// Written where the refresh token would go in the phone's copy: the hub holds the only real one.
+/// Must match Kd.HUB_HELD in the app.
+pub const HUB_HELD: &str = "kdpager-hub-held";
 const NAME_RELOAD_MIN: Duration = Duration::from_secs(30);
 pub const UNKNOWN_MEMBER: &str = "unknown member";
 
@@ -237,6 +242,9 @@ impl Hub {
 
     pub async fn register(self: &Arc<Self>, fcm_token: String, raw: &Value) -> Result<(usize, String), ApiErr> {
         let mut sess = parse_session(raw).map_err(|e| ApiErr(400, e))?;
+        if sess.refresh_token == HUB_HELD {
+            return Err(ApiErr(400, "that session is the hub's own copy; log in to KD to hand over a new one".into()));
+        }
         if sess.expires_at - now() < 120 {
             sess = self.sb.refresh(&sess.refresh_token).await.map_err(|e| match e {
                 RefreshErr::Rejected(m) => ApiErr(401, m),
@@ -284,6 +292,40 @@ impl Hub {
         self.gc_sessions();
         self.ensure_workers();
         Ok((n_guilds, device_key))
+    }
+
+    /// The phone's KD session: the hub's live access token with the refresh token withheld.
+    /// One login: the phone hands its session over once and from then on asks here instead of refreshing.
+    pub fn session_for(&self, fcm_token: &str, key: &str) -> Result<Value, ApiErr> {
+        let uid = self
+            .store
+            .with(|st| st.regs.iter().find(|r| r.fcm_token == fcm_token && key_eq(&r.device_key, key)).map(|r| r.user_id.clone()))
+            .ok_or_else(|| ApiErr(403, "fcm_token + device_key not registered".into()))?;
+        let s = self
+            .sessions
+            .lock()
+            .unwrap()
+            .get(&uid)
+            .cloned()
+            .ok_or_else(|| ApiErr(401, "pager session is gone: log in to KD again".into()))?;
+        let i = s.inner.lock().unwrap();
+        let (Some(access), Some(mut o)) = (i.access.clone(), i.raw.clone()) else {
+            return Err(ApiErr(503, "session is renewing, retry shortly".into()));
+        };
+        let left = i.expires_at - now();
+        if left < 60 {
+            return Err(ApiErr(503, format!("hub's access token expires in {left}s and is being renewed, retry shortly")));
+        }
+        let Some(m) = o.as_object_mut() else {
+            return Err(ApiErr(500, "stored session is not an object".into()));
+        };
+        m.insert("access_token".into(), Value::from(access));
+        m.insert("refresh_token".into(), Value::from(HUB_HELD));
+        m.insert("expires_at".into(), Value::from(i.expires_at));
+        m.insert("expires_in".into(), Value::from(left));
+        m.remove("provider_token");
+        m.remove("provider_refresh_token");
+        Ok(o)
     }
 
     /// FCM token rotation: swap the token on an existing registration, keep session + guilds.
@@ -477,10 +519,18 @@ impl Hub {
         if !resp.status().is_success() {
             return Err(format!("members page returned {}", resp.status()));
         }
+        // after redirects: a /login landing means KD's server did not accept the session cookie
+        let landed = resp.url().path().to_string();
+        let status = resp.status();
         let body = resp.text().await.map_err(|e| format!("members body: {e}"))?;
         let map = names::parse_members(&body);
         if map.is_empty() {
-            return Err("members page parsed to zero usernames (page format changed?)".into());
+            let login = landed.starts_with("/login") || body.contains("\"/login");
+            let left = via.inner.lock().unwrap().expires_at - now();
+            return Err(format!(
+                "members page parsed to zero usernames: HTTP {status}, landed {landed}, {} bytes, login page: {login}, session token {left}s left",
+                body.len()
+            ));
         }
         Ok(map)
     }
@@ -526,7 +576,7 @@ impl Hub {
         if let Err(e) = self.store.save() {
             error!("save after session failure: {e}");
         }
-        self.alert_user(&s.user_id, "Pager session expired. Open KD Pager and reconnect.");
+        self.alert_user(&s.user_id, "Pager session expired. Open KD Pager and log in again.");
     }
 }
 

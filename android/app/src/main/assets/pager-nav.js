@@ -10,8 +10,21 @@
     b.id = 'kdapp-pager'; b.type = 'button'; b.className = 'nav-btn-circle';
     b.title = 'Pager'; b.setAttribute('aria-label', 'Pager settings');
     b.innerHTML = ICON;
+    // state dot: green = pager on, grey = off. Native updates it through __kdappSetPager after a handover or logout.
+    b.style.position = 'relative';
+    const dot = document.createElement('span');
+    dot.id = 'kdapp-pager-dot';
+    dot.style.cssText = 'position:absolute;top:2px;right:2px;width:8px;height:8px;border-radius:50%;border:1.5px solid #000;';
+    b.appendChild(dot);
     b.onclick = () => window.KDApp.openSettings();
     box.appendChild(b);
+    window.__kdappSetPager(window.KDApp.pagerOn());
+  };
+  window.__kdappSetPager = (on) => {
+    const d = document.getElementById('kdapp-pager-dot');
+    if (d) d.style.background = on ? '#22c55e' : '#6b7280';
+    const b = document.getElementById('kdapp-pager');
+    if (b) b.title = on ? 'Pager on' : 'Pager off';
   };
   put();
   if (!window.__kdappObs) {

@@ -1,4 +1,4 @@
-//! The only HTTP surface: POST /register, POST /unregister, GET /health. Everything else: bare 404.
+//! The only HTTP surface: POST /register, POST /unregister, POST /token, GET /health. Everything else: bare 404.
 
 use crate::hub::{ApiErr, Hub, SOCK_CONNECTING, SOCK_DOWN, SOCK_UP};
 use axum::http::HeaderMap;
@@ -26,6 +26,13 @@ struct RegisterReq {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct UnregisterReq {
+    fcm_token: String,
+    device_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TokenReq {
     fcm_token: String,
     device_key: String,
 }
@@ -73,6 +80,14 @@ async fn dispatch(State(hub): State<Arc<Hub>>, method: Method, uri: Uri, headers
                 return err(ApiErr(429, "too many requests from this address".into()));
             }
             unregister(&hub, &body)
+        }
+        (Method::POST, "/token") => {
+            // the app asks on open/resume and when KD's page wants a refresh: a few per hour per phone
+            if !hub.allow(&ip, "token", 240, 3600) {
+                warn!("rate limit: /token from {ip}");
+                return err(ApiErr(429, "too many requests from this address".into()));
+            }
+            token(&hub, &body)
         }
         _ => StatusCode::NOT_FOUND.into_response(),
     }
@@ -123,6 +138,20 @@ fn unregister(hub: &Arc<Hub>, body: &[u8]) -> Response {
         json_resp(200, json!({"ok": true, "removed": true}))
     } else {
         err(ApiErr(403, "fcm_token + device_key not registered".into()))
+    }
+}
+
+fn token(hub: &Arc<Hub>, body: &[u8]) -> Response {
+    let req: TokenReq = match serde_json::from_slice(body) {
+        Ok(r) => r,
+        Err(e) => return err(ApiErr(400, format!("bad json: {}", e.classify_name()))),
+    };
+    if !valid_fcm(&req.fcm_token) {
+        return err(ApiErr(400, "fcm_token is not a plausible token".into()));
+    }
+    match hub.session_for(&req.fcm_token, &req.device_key) {
+        Ok(s) => json_resp(200, json!({"session": s})),
+        Err(e) => err(e),
     }
 }
 

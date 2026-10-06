@@ -30,11 +30,6 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode" />
 
-        <activity
-            android:name=".ConnectActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden|uiMode" />
-
         <service
             android:name=".PagerMessagingService"
             android:exported="false">

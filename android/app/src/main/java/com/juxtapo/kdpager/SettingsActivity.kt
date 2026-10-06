@@ -6,10 +6,12 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
 import android.view.WindowInsets
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 
 // Our own page, in KD's look (palette + shapes read from krackeddevs.com): dark card, mono uppercase labels, green.
 class SettingsActivity : Activity() {
@@ -201,31 +203,37 @@ class SettingsActivity : Activity() {
         renderSounds()
     }
 
+    // One control: logged in = pager on, Log out = pager off. There is no separate pager login.
     private fun render(error: String?) {
-        if (Hub.connected(this)) {
-            status.text = "Connected"
-            detail.text = (Hub.guildCount(this)?.let { "WATCHING $it ${if (it == 1) "GUILD" else "GUILDS"}" } ?: "GUILD COUNT UNKNOWN") +
-                (error?.let { "\nDisconnect error: $it" } ?: "")
-            // secondary action: KD's outlined button
-            action.text = "Disconnect"
-            action.setTextColor(getColor(R.color.kd_white))
-            action.background = shape(R.color.kd_black, R.color.kd_border, 8f)
-            action.setOnClickListener {
-                action.isEnabled = false
-                Thread {
-                    val err = runCatching { Hub.unregister(this) }.onFailure { L.e("unregister failed", it) }.exceptionOrNull()?.message
-                    runOnUiThread { action.isEnabled = true; render(err) }
-                }.start()
-            }
-        } else {
-            status.text = "Not connected"
-            detail.text = (if (error != null) "$error\n" else "") +
-                "Connect logs in to KD once more, for the pager only. Your daily login stays as it is."
-            // primary action: KD's solid green button
-            action.text = "Connect Pager"
-            action.setTextColor(getColor(R.color.kd_black))
-            action.background = shape(R.color.kd_green_btn, null, 8f)
-            action.setOnClickListener { startActivity(Intent(this, ConnectActivity::class.java)) }
+        val loggedIn = runCatching { Kd.sessionFromCookie() }.getOrNull() != null
+        val on = Hub.connected(this)
+        status.text = when { on -> "Pager on"; loggedIn -> "Pager off"; else -> "Logged out" }
+        detail.text = listOfNotNull(
+            when {
+                on -> Hub.guildCount(this)?.let { "WATCHING $it ${if (it == 1) "GUILD" else "GUILDS"}" } ?: "GUILD COUNT UNKNOWN"
+                loggedIn -> "TURNS ON BY ITSELF ON THE NEXT KD PAGE"
+                else -> "LOG IN TO KD AND THE PAGER TURNS ON"
+            },
+            error,
+        ).joinToString("\n")
+        action.visibility = if (loggedIn) View.VISIBLE else View.GONE
+        action.text = "Log out"
+        action.setTextColor(getColor(R.color.kd_white))
+        action.background = shape(R.color.kd_black, R.color.kd_border, 8f)
+        action.setOnClickListener {
+            action.isEnabled = false
+            Thread {
+                val err = if (Hub.connected(this)) runCatching { Hub.unregister(this) }.onFailure { L.e("logout: unregister failed", it) }.exceptionOrNull()?.message else null
+                runOnUiThread {
+                    // logged out either way; a failed hub notice is retried on the next app open
+                    Kd.clearCookie()
+                    Kd.forget(this)
+                    if (err != null) Toast.makeText(this, "Logged out, but the pager hub could not be told: $err. Retrying next open.", Toast.LENGTH_LONG).show()
+                    startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_URL, MainActivity.LOGIN)
+                        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                    finish()
+                }
+            }.start()
         }
     }
 }

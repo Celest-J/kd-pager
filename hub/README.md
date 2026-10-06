@@ -4,8 +4,9 @@ Rust relay. Each user hands their own KD session to the hub. The hub listens to 
 and pages every other registered member of the guild through FCM (data-only, priority HIGH).
 
 Endpoints (everything else is a bare 404):
-- `POST /register` connect: `{"fcm_token", "kd_session": {access_token, refresh_token, expires_at, user_id}}`; rotation: `{"fcm_token", "old_fcm_token"}` (no session; 409 if old token unknown = re-run Connect). Both or neither: 400.
+- `POST /register` connect: `{"fcm_token", "kd_session": {access_token, refresh_token, expires_at, user_id}}`; rotation: `{"fcm_token", "old_fcm_token"}` (no session; 409 if old token unknown = log in again). Both or neither: 400.
   `kd_session` also accepts the cookie form `"base64-<base64url JSON>"`. Unknown fields are rejected. Body cap 32 KB.
+- `POST /token` `{"fcm_token", "device_key"}` → `{"session"}`: the hub's live access token for that phone, `refresh_token` = `kdpager-hub-held` (the real one never leaves the hub). 403 unknown registration, 401 session gone, 503 renewing or <60 s left. 240/h per IP.
 - `POST /unregister` `{"fcm_token": "..."}`
 - `GET /health` counts only (sessions, guilds, sockets, registrations, last_row_at).
 
@@ -48,7 +49,7 @@ Add `deploy/Caddyfile.snippet` to the Caddyfile. Binary is glibc-dynamic: build 
 
 ## Behaviour notes
 - Realtime: `vsn=2.0.0`, topic `realtime:guild_chat:<guild_id>`, INSERT on `public.guild_messages`. One live socket per guild; other registered sessions are spares. No working listener for 90 s: every member of that guild gets an `alert` push.
-- Refresh: 5 min before expiry. Rejected refresh token: session dropped, owner gets an `alert` push. Network errors retry every 20 s until the access token expires.
+- Refresh: 20 min before expiry, so a phone's copy from `/token` always has >20 min left. `/register` rejects a `kdpager-hub-held` session (400). Rejected refresh token: session dropped, owner gets an `alert` push. Network errors retry every 20 s until the access token expires.
 - Push data: `type, guild_id, guild_name, guild_slug, msg_id, user_id, username, content, created_at, mention`. Alerts: `type=alert, message[, guild_id]`.
 - Sender name unresolved: `username` is `unknown member`.
 - State file `state.kdp`: XChaCha20-Poly1305, holds refresh tokens, registrations, last-seen timestamps. Access tokens stay in memory. Tokens and message text are never logged.

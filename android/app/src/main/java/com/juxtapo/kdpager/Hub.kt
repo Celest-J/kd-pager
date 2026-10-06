@@ -7,20 +7,23 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
-// The pager hub: holds the Connect Pager session, listens to KD, and pages this phone through FCM.
+// The pager hub: holds the user's KD session (handed over at login), listens to KD, pages this phone through FCM,
+// and serves the phone fresh access tokens so there is one login, not two.
 object Hub {
     const val BASE = "https://pager.jux-lab.com"
     private const val K_CONNECTED = "hub_connected"
     private const val K_KEY = "hub_device_key"
 
     class HubError(msg: String) : Exception(msg)
+    // The hub no longer has this phone's session or registration: the user must log in to KD again.
+    class HubGone(msg: String) : Exception(msg)
 
     fun prefs(ctx: Context) = Kd.prefs(ctx)
-    // connected without a device key = registered before keys existed: shown as not connected so the user re-runs Connect
+    // connected without a device key = registered before keys existed: shown as off until the next login hands over
     fun connected(ctx: Context) = prefs(ctx).getBoolean(K_CONNECTED, false) && prefs(ctx).getString(K_KEY, null) != null
     fun guildCount(ctx: Context) = prefs(ctx).getInt("guild_count", -1).takeIf { it >= 0 }
 
-    // The Connect Pager session lives only on the hub: this copy is kept in memory until the POST lands, never on disk.
+    // The handed-over session lives only on the hub: this copy is kept in memory until the POST lands, never on disk.
     private fun sessionJson(s: Kd.Session): JSONObject = JSONObject()
         .put("access_token", s.access).put("refresh_token", s.refresh).put("expires_at", s.expiresAt)
         .put("user_id", s.userId)
@@ -42,6 +45,34 @@ object Hub {
         }
     }
 
+    // One login: the WebView's fresh session goes to the hub, which becomes its only refresher.
+    // The phone keeps the access token with the refresh token replaced by Kd.HUB_HELD.
+    fun handover(ctx: Context, s: Kd.Session) {
+        register(ctx, s)
+        Kd.writeCookie(Kd.fromJson(JSONObject(s.json.toString()).put("refresh_token", Kd.HUB_HELD)))
+        Kd.forget(ctx)
+        L.i("hub: session handed over, phone holds access token only")
+    }
+
+    // The phone's current KD session from the hub (refresh token withheld). Blocking: call off the main thread.
+    fun session(ctx: Context): Kd.Session {
+        val token = prefs(ctx).getString("hub_token", null) ?: throw HubGone("this phone has no pager registration")
+        val key = prefs(ctx).getString(K_KEY, null) ?: throw HubGone("this phone has no device key")
+        val req = Request.Builder().url("$BASE/token")
+            .post(JSONObject().put("fcm_token", token).put("device_key", key).toString().toRequestBody("application/json".toMediaType())).build()
+        Kd.http.newCall(req).execute().use { r ->
+            val text = r.body.string()
+            if (r.code == 401 || r.code == 403) throw HubGone("hub: HTTP ${r.code} ${text.take(200)}")
+            if (!r.isSuccessful) throw HubError("POST /token -> HTTP ${r.code} ${text.take(200)}")
+            val s = Kd.fromJson(JSONObject(text).getJSONObject("session"))
+            if (!Kd.hubHeld(s)) throw HubError("hub returned a session that is not marked hub-held")
+            return s
+        }
+    }
+
+    fun forgetLocal(ctx: Context) =
+        prefs(ctx).edit().putBoolean(K_CONNECTED, false).remove("hub_token").remove(K_KEY).remove("guild_count").apply()
+
     fun register(ctx: Context, session: Kd.Session) {
         val token = fcmToken()
         val res = JSONObject(post("/register", JSONObject().put("fcm_token", token).put("kd_session", sessionJson(session))))
@@ -58,9 +89,9 @@ object Hub {
     fun unregister(ctx: Context) {
         val token = prefs(ctx).getString("hub_token", null) ?: fcmToken()
         val key = prefs(ctx).getString(K_KEY, null)
-            ?: throw HubError("no device key stored (connected before keys existed): Connect again, then Disconnect")
+            ?: throw HubError("no device key stored (registered before keys existed): log in again to replace it")
         post("/unregister", JSONObject().put("fcm_token", token).put("device_key", key))
-        prefs(ctx).edit().putBoolean(K_CONNECTED, false).remove("hub_token").remove(K_KEY).remove("guild_count").apply()
+        forgetLocal(ctx)
         L.i("hub: unregistered")
     }
 
@@ -70,7 +101,7 @@ object Hub {
         val old = prefs(ctx).getString("hub_token", null)
         val key = prefs(ctx).getString(K_KEY, null)
         if (!connected(ctx) || old == null || key == null) {
-            L.w("hub: new FCM token while not connected — Connect Pager to register it")
+            L.w("hub: new FCM token while the pager is off — the next KD login registers it")
             return
         }
         post("/register", JSONObject().put("fcm_token", newToken).put("old_fcm_token", old).put("device_key", key))

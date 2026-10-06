@@ -2,6 +2,22 @@
 
 All notable changes to KD Pager. Each version's APK is on the [Releases](../../releases) page.
 
+## [0.6.0] — 2026-10-06
+
+**Install over 0.5.1 — no reinstall, no new login.** Your existing pager session moves to the new setup by itself.
+
+### Changed
+- **One login.** No more second "Connect Pager" login. Log in to KD once and the pager is on. The hub now holds the only refresh token and hands the app fresh access tokens, so app and pager can't log each other out.
+- **Pager state is visible.** The pager button next to `<KD/>` has a dot: green = on, grey = off. After the switch you see a one-time "Pager is on" note.
+- **Settings is one control:** Pager on / off, and **Log out**.
+- **Log out in the app logs out this phone only** and switches its pager off. (Logging out of KD on the web still signs you out everywhere — that's KD.)
+
+### Removed
+- The Connect screen and the on-phone listener fallback at boot.
+
+### Hub
+- New `POST /token`; sessions renew 20 min before expiry. Already live.
+
 ## [0.5.1] — 2026-10-06
 
 **Install over 0.5.0 — no reinstall needed, your login and settings stay.**

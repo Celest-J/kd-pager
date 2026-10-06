@@ -26,6 +26,12 @@ object Kd {
         .pingInterval(20, TimeUnit.SECONDS) // a silently dead socket fails within ~20s instead of lingering
         .build()
 
+    // One login: after handover the hub holds the only refresh token. The phone's copy carries this marker instead
+    // (must match HUB_HELD in hub/src/hub.rs); KD's page refreshes through MainActivity, which asks the hub.
+    const val HUB_HELD = "kdpager-hub-held"
+    fun hubHeld(s: Session) = s.refresh == HUB_HELD
+    fun fromJson(o: JSONObject): Session = parse(o)
+
     data class Session(val access: String, val refresh: String, val expiresAt: Long, val userId: String, val json: JSONObject)
 
     data class Guild(val id: String, val name: String, val slug: String)
@@ -76,6 +82,7 @@ object Kd {
     // Refresh with the refresh token, then write the new session back into the WebView cookie,
     // so the site's own client never sees an expired token and never refreshes on its own.
     fun refresh(ctx: Context, s: Session): Session {
+        if (hubHeld(s)) throw KdError("session is held by the pager hub: the phone never refreshes it")
         val body = JSONObject().put("refresh_token", s.refresh).toString().toRequestBody("application/json".toMediaType())
         val req = Request.Builder().url("$SB/auth/v1/token?grant_type=refresh_token")
             .header("apikey", ANON).post(body).build()
@@ -89,7 +96,7 @@ object Kd {
         }
     }
 
-    private fun writeCookie(s: Session) {
+    fun writeCookie(s: Session) {
         val o = JSONObject(s.json.toString()).apply { remove("provider_token"); remove("provider_refresh_token") }
         val value = "base64-" + Base64.encodeToString(o.toString().toByteArray(), Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
         val chunks = value.chunked(CHUNK)
@@ -100,6 +107,15 @@ object Kd {
         // drop leftovers from a longer previous session
         for (i in chunks.size until chunks.size + 3) cm.setCookie(SITE, "$COOKIE.$i=; Path=/; Max-Age=0")
         if (chunks.size > 1) cm.setCookie(SITE, "$COOKIE=; Path=/; Max-Age=0")
+        cm.flush()
+    }
+
+    // Every KD auth cookie gone = logged out on this phone (KD's own logout is global; this is not).
+    fun clearCookie() {
+        val cm = CookieManager.getInstance()
+        (cm.getCookie(SITE) ?: "").split(";").map { it.trim().substringBefore('=') }
+            .filter { it.startsWith("sb-") }
+            .forEach { cm.setCookie(SITE, "$it=; Path=/; Max-Age=0") }
         cm.flush()
     }
 

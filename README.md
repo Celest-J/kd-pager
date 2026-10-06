@@ -24,28 +24,28 @@
 
 1. Install the APK from [Releases](../../releases/latest) — what changed in each version: [CHANGELOG](CHANGELOG.md) (Android 8+; own sound files need Android 10+).
 2. Log in to KD — use **GitHub, Discord or email**. Google blocks its login inside apps.
-3. Tap the **pager button** next to `<KD/>` → **Connect Pager** → log in once more → allow notifications.
-4. Settings shows **Connected · watching N guilds**. Done.
+3. Allow notifications when asked. The pager switches on by itself — one login, that's it.
+4. The pager button next to `<KD/>` shows a dot: **green** = pager on, **grey** = off. Tap it for settings (**Pager on/off**, **Log out**).
 
-**Why log in twice?** KD's login (Supabase) rotates its refresh token on every refresh and treats an old one coming back as theft — two devices sharing one session would log each other out. So the pager gets its own session. With GitHub or Discord the second login is one tap.
+**One login.** KD's login (Supabase) rotates its refresh token on every refresh and treats an old one coming back as theft, so two refreshers sharing one session would log each other out. KD Pager makes the hub the only refresher: after you log in, the app hands its session to the hub, and the app asks the hub for a fresh access token whenever KD's page needs one. Your phone keeps an access token only.
 
-Slow mobile data makes the KD login pages feel laggy; first Connect on Wi-Fi is smoothest.
+Slow mobile data makes the KD login pages feel laggy; first login on Wi-Fi is smoothest.
 
 ## What the pager stores (and doesn't)
 
 | | |
 |---|---|
 | Your password | **Never seen.** Login happens on KD's own page. |
-| Your KD session | Kept **encrypted** on the hub, used only to listen to the guild chats you're already in. Access tokens never touch disk. |
+| Your KD session | Held **encrypted** on the hub — the only copy of the refresh token. Used to listen to the guild chats you're already in and to hand your phone fresh access tokens. Access tokens never touch disk. |
 | Messages | Relayed to your phone, **not stored**. |
-| Disconnect | Removes your phone from the hub immediately. Max 3 phones per account. |
+| Pager off / Log out | Removes your phone from the hub immediately. Max 3 phones per account. |
 
 ## How it works
 
 ```
 KD (Supabase realtime) ──► hub (Rust, one small VM) ──► Firebase Cloud Messaging ──► your phone
                                ▲                                                      │
-                               └──────────── Connect: your pager session ─────────────┘
+                               └────── one login, handed over; fresh access tokens ───┘
 ```
 
 - **Hub** (`hub/`): holds each connected user's pager session, keeps one realtime socket per guild, resolves sender names/avatars from the guild Members page, and reads the public `/raid` page every 30 min for raid times and the boss sprite.
