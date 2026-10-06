@@ -501,11 +501,28 @@ impl Hub {
     }
 
     /// Refresh succeeded or failed for good: the owner of a dead session gets a loud push.
+    /// A replaced session (owner reconnected mid-refresh) ends quietly: it must not evict its successor.
     fn session_failed(self: &Arc<Self>, s: &Arc<Session>, why: &str) {
-        error!("session for user {} stopped: {why}", s.user_id);
         s.kill();
-        self.sessions.lock().unwrap().remove(&s.user_id);
-        self.store.with(|st| drop(st.refresh.remove(&s.user_id)));
+        let current = {
+            let mut m = self.sessions.lock().unwrap();
+            let cur = m.get(&s.user_id).is_some_and(|c| Arc::ptr_eq(c, s));
+            if cur {
+                m.remove(&s.user_id);
+            }
+            cur
+        };
+        if !current {
+            info!("replaced session for user {} ended: {why}", s.user_id);
+            return;
+        }
+        error!("session for user {} stopped: {why}", s.user_id);
+        let held = s.inner.lock().unwrap().refresh.clone();
+        self.store.with(|st| {
+            if st.refresh.get(&s.user_id) == Some(&held) {
+                st.refresh.remove(&s.user_id);
+            }
+        });
         if let Err(e) = self.store.save() {
             error!("save after session failure: {e}");
         }
@@ -533,9 +550,20 @@ async fn run_session(hub: Arc<Hub>, s: Arc<Session>) {
         match hub.sb.refresh(&refresh).await {
             Ok(ns) => {
                 info!("session {} refreshed, next in ~{}s", s.user_id, (ns.expires_at - now() - REFRESH_LEAD_SECS).max(30));
-                hub.store.with(|st| drop(st.refresh.insert(s.user_id.clone(), ns.refresh_token.clone())));
-                if let Err(e) = hub.store.save() {
-                    error!("persist rotated refresh token: {e}");
+                // only rotate the stored token if it is still ours; a reconnect may have replaced it
+                let ours = hub.store.with(|st| match st.refresh.get_mut(&s.user_id) {
+                    Some(t) if *t == refresh => {
+                        *t = ns.refresh_token.clone();
+                        true
+                    }
+                    _ => false,
+                });
+                if ours {
+                    if let Err(e) = hub.store.save() {
+                        error!("persist rotated refresh token: {e}");
+                    }
+                } else {
+                    info!("session {} replaced during refresh, not persisting its token", s.user_id);
                 }
                 {
                     let mut i = s.inner.lock().unwrap();
