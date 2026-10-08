@@ -13,8 +13,8 @@ android {
         applicationId = "com.juxtapo.kdpager"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "0.6.0"
+        versionCode = 16
+        versionName = "0.6.5"
     }
 
     // Release signing comes from android/keystore.properties (never committed):
@@ -56,6 +56,7 @@ tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }.co
 
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("androidx.browser:browser:1.8.0")
     implementation(platform("com.google.firebase:firebase-bom:34.4.0"))
     implementation("com.google.firebase:firebase-messaging")
 }

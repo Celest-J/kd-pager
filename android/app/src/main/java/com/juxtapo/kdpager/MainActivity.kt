@@ -76,7 +76,7 @@ class MainActivity : Activity() {
             override fun shouldOverrideUrlLoading(view: WebView, req: WebResourceRequest): Boolean {
                 val host = req.url.host ?: return false
                 if (host.endsWith("accounts.google.com")) {
-                    Toast.makeText(this@MainActivity, "Google blocks login inside apps — use GitHub, Discord or email (same KD account).", Toast.LENGTH_LONG).show()
+                    googleLogin(req.url)
                     return true
                 }
                 if (INSIDE.any { host == it || host.endsWith(".$it") }) return false
@@ -112,7 +112,8 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { goBack() }
         }
-        val url = intent.getStringExtra(EXTRA_URL)
+        val url = intent.getStringExtra(EXTRA_URL) ?: kdLink(intent)
+        if (Build.VERSION.SDK_INT >= 31 && !Kd.prefs(this).getBoolean("links_asked", false) && !callbackLinkApproved()) askLinks(forLogin = false)
         intent.getStringExtra(EXTRA_GUILD)?.let { PagerService.clear(it) }
         // KD's server must never see an expiring hub-held cookie: sync first, then load
         bg.execute {
@@ -175,7 +176,9 @@ class MainActivity : Activity() {
             } catch (e: Exception) {
                 handoverFailedAt = now()
                 L.e("handover failed", e)
-                toast("Pager not on: ${e.message}. Retrying on the next page.")
+                val msg = e.message.orEmpty()
+                toast(if ("no guilds" in msg) "Pager not on: join a guild on KD first, then reopen the app."
+                    else "Pager not on: $msg. Retrying on the next page.")
             } finally {
                 handing = false
             }
@@ -245,7 +248,50 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.getStringExtra(EXTRA_URL)?.let { web.loadUrl(it) }
+        kdLink(intent)?.let { web.loadUrl(it) }
         intent.getStringExtra(EXTRA_GUILD)?.let { PagerService.clear(it) }
+    }
+
+    // Google refuses OAuth inside WebViews (403 disallowed_useragent), so the Google step runs in a Chrome
+    // Custom Tab. KD uses PKCE: the code verifier cookie lives in THIS WebView (KD's page started the flow here),
+    // so Chrome only does the Google part. KD then redirects Chrome to /auth/callback?code=…, which Android hands
+    // back to this activity (link approved by the user, no assetlinks on KD needed) and the WebView finishes it.
+    private fun googleLogin(url: android.net.Uri) {
+        if (!callbackLinkApproved()) { askLinks(forLogin = true); return }
+        Log.i("KDPager", "google login: custom tab")
+        androidx.browser.customtabs.CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(this, url)
+    }
+
+    // Neutral on purpose: it is a real feature (KD links from Discord/WhatsApp open here) and it is also what lets
+    // the Google login come back. Asked once on first launch; asked again only when Google login needs it.
+    private fun askLinks(forLogin: Boolean) {
+        Kd.prefs(this).edit().putBoolean("links_asked", true).apply()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Open KD links in KD Pager")
+            .setMessage("For GitHub login: Skip\n\nFor Google login: Set up > Add link > tick krackeddevs.com > Add")
+            .setPositiveButton("Set up") { _, _ ->
+                startActivity(Intent(android.provider.Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS,
+                    android.net.Uri.parse("package:$packageName")))
+            }
+            .setNegativeButton("Skip", null)
+            .show()
+    }
+
+    private fun callbackLinkApproved(): Boolean {
+        if (Build.VERSION.SDK_INT < 31) return true  // pre-12 shows a chooser for unverified links
+        val m = getSystemService(android.content.pm.verify.domain.DomainVerificationManager::class.java)
+        val st = m.getDomainVerificationUserState(packageName) ?: return false
+        val v = st.hostToStateMap["krackeddevs.com"]
+        return v == android.content.pm.verify.domain.DomainVerificationUserState.DOMAIN_STATE_SELECTED ||
+            v == android.content.pm.verify.domain.DomainVerificationUserState.DOMAIN_STATE_VERIFIED
+    }
+
+    private fun kdLink(i: Intent): String? {
+        val u = i.data ?: return null
+        if (i.action != Intent.ACTION_VIEW || u.scheme != "https" || u.host != "krackeddevs.com") return null
+        if (u.path?.startsWith("/auth/callback") == true)
+            Log.i("KDPager", "google login: callback back from chrome (code=${u.getQueryParameter("code") != null})")
+        return u.toString()
     }
 
     // The pager button in KD's nav calls this. Exposed to every page in the WebView; it only opens our own screen.

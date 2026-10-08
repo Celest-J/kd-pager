@@ -2,6 +2,21 @@
 
 All notable changes to KD Pager. Each version's APK is on the [Releases](../../releases) page.
 
+## [0.6.5] — 2026-10-08
+
+**Install over 0.6.0 — no new login.** Also on Google Play (closed test).
+
+### Added
+- **Google login works.** Google blocks its login inside apps, so KD Pager now opens it in a Chrome Custom Tab. KD sends the result back to the app, which finishes the login in its own window. Needs one approval on Android 12+: **Set up** → **Add link** → tick `krackeddevs.com` → **Add** (asked on first launch; GitHub/email users can skip).
+- **KD links open in the app.** With that approval, krackeddevs.com links from Discord, WhatsApp or email open straight in KD Pager.
+
+### Changed
+- Account in no guild → plain message ("join a guild on KD first") instead of a raw hub error.
+
+### Removed
+- Discord from the login hints (KD no longer offers Discord login).
+- Unused permissions: foreground service and battery-optimisation exemption (the hub + push do the work since 0.6.0).
+
 ## [0.6.0] — 2026-10-06
 
 **Install over 0.5.1 — no reinstall, no new login.** Your existing pager session moves to the new setup by itself.

@@ -99,7 +99,7 @@ class PagerService : Service() {
     private var bootBackoffS = 5L
     private fun boot() {
         try {
-            var s = Kd.current(this) ?: return fail("Not logged in", "Open KD Pager and log in with GitHub, Discord or email.")
+            var s = Kd.current(this) ?: return fail("Not logged in", "Open KD Pager and log in with GitHub or email.")
             if (s.expiresAt - now() < REFRESH_MARGIN_S) s = Kd.refresh(this, s)
             session = s
             val list = Kd.myGuilds(s)

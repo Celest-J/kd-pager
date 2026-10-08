@@ -23,7 +23,8 @@
 ## Getting started
 
 1. Install the APK from [Releases](../../releases/latest) — what changed in each version: [CHANGELOG](CHANGELOG.md) (Android 8+; own sound files need Android 10+).
-2. Log in to KD — use **GitHub, Discord or email**. Google blocks its login inside apps.
+2. Log in to KD with **GitHub, Google or email**.
+   - **Google:** on first launch tap **Set up** → **Add link** → tick `krackeddevs.com` → **Add**. Google login then opens in Chrome and comes back to the app logged in. (GitHub/email users can tap **Skip**.)
 3. Allow notifications when asked. The pager switches on by itself — one login, that's it.
 4. The pager button next to `<KD/>` shows a dot: **green** = pager on, **grey** = off. Tap it for settings (**Pager on/off**, **Log out**).
 
